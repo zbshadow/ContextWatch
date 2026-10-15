@@ -1,73 +1,129 @@
 # ContextWatch
 
-A Claude Code mod that keeps one line above the prompt:
+[![Version](https://img.shields.io/badge/version-0.1.0-blue)](.claude-plugin/plugin.json)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Claude Code](https://img.shields.io/badge/Claude%20Code-%E2%89%A52.1.287-d97757)](https://claude.com/claude-code)
+
+A Claude Code mod that shows the model, context usage and repository status in a line above the prompt.
 
 ```
-Sonnet 4.6 · Effort: high · Context: 24k (18%) · [GitHub/my-project/main*] +12 -3
+Opus 5.5 · Effort: high · Context: 24k (18%) · [GitHub/my-project/main*] +12 -3
 ```
 
-- the active model
-- the reasoning effort of the main loop (`low` … `max`), omitted for a model without effort
-- context-window usage (tokens and percent), green / yellow / red by pressure
-- `Consider /compact or /clear` once usage is in the red
-- version control: platform/repo/branch, `*` and cyan when the tree is dirty, detached HEAD, or TFVC workspace
-- lines changed against `HEAD` (staged and unstaged), `+N` in green and `-N` in red, after a git branch; untracked files aren't counted, as in `git diff`
+<!-- TODO: add a screenshot of the band, e.g. ![ContextWatch in action](docs/screenshot.png) -->
 
-It is the successor to the `claude-context-meter` npm package (v1.0.6). It replaces the `statusLine` script with a band above the prompt, and doesn't touch your `settings.json` or an existing `statusLine`.
+## Features
 
-## Install
+- **Context meter**: tokens used and percentage of the context window, colored green, yellow or red.
+- **Compact button**: shown next to the meter when usage is in the red.
+- **Red-zone notification**: shown once when usage enters the red.
+- **Model and effort**: the active model and its reasoning effort.
+- **Repository status**: platform, repo, branch, uncommitted changes, and lines added and removed.
+- **Supported version control**: GitHub, GitLab, Bitbucket, Azure DevOps and TFVC.
+- **No network access**; does not modify `settings.json`.
 
-At the prompt of a Claude Code terminal session:
+## Requirements
+
+- [Claude Code](https://claude.com/claude-code) 2.1.287 or later
+
+## Installation
+
+**In Claude Code:**
 
 ```
 /plugin install context-watch --marketplace zbshadow/ContextWatch
 ```
 
-Answer `y` to add the marketplace, then pick a scope.
+Answer `y` to add the marketplace, then choose a scope.
 
-From a shell:
+**From a terminal:**
 
 ```sh
 claude plugin install context-watch --marketplace zbshadow/ContextWatch
 ```
 
-In the desktop app, where `/plugin` does not run: click **+** next to the prompt box, then **Plugins**, **Add marketplace** with `zbshadow/ContextWatch`, then **Add plugin**.
+**In the Claude desktop app:** click **+** next to the prompt box, choose **Plugins** → **Add marketplace**, enter `zbshadow/ContextWatch`, then click **Add plugin**.
 
-## Use
+## Updating
 
-`/context-watch` hides or shows the band. The choice is kept across sessions.
+```sh
+claude plugin update context-watch@context-watch
+```
+
+Restart Claude Code to load the new version.
+
+## Uninstalling
+
+```sh
+claude plugin uninstall context-watch@context-watch
+```
+
+To disable without uninstalling: `claude plugin disable context-watch@context-watch`.
+
+## Usage
+
+### Reading the band
+
+| Segment | Example | Meaning |
+|---|---|---|
+| Model | `Opus 5.5` | Active model |
+| Effort | `Effort: high` | Reasoning effort; shown after the first prompt |
+| Context | `Context: 24k (18%)` | Tokens used and percentage of the context window |
+| Repository | `[GitHub/my-project/main*]` | Platform, repo and branch; `*` means uncommitted changes |
+| Changes | `+12 -3` | Lines added and removed since the last commit |
+
+| Color | Default range |
+|---|---|
+| Green | under 70k tokens |
+| Yellow | 70k – 100k tokens |
+| Red | over 100k tokens |
+
+### Compacting
+
+In the red zone, click **Compact** or press `c` while the band is focused to run `/compact`. The button is hidden while Claude is working.
+
+### Showing and hiding
+
+`/context-watch` toggles the band. The setting persists across sessions.
 
 ## Configuration
 
-Set from `/config` (or `pluginConfigs["context-watch"].options` in settings):
-
-| Option | Default | Meaning |
-|---|---|---|
-| `yellowAt` | `70000` | tokens at which the meter turns yellow |
-| `redAbove` | `100000` | tokens above which it turns red and suggests `/compact` |
-| `showVcs` | `true` | include the version-control segment |
-
-If `yellowAt` is not below `redAbove`, the defaults are used and a warning is logged.
-
-## Decisions
-
-- **Zones are by token count, not percent.** This matches v1.0.6. With 1M-token context windows the default red line (100k) sits at 10% of the window, so raise `yellowAt`/`redAbove` if you'd rather be warned later.
-- **No status-line duplicate.** The mod only draws the band; it does not also call `$.ui.status`.
-- **Updates are pushed by the engine, not polled.** Usage comes from `session.measure` at the end of each turn and is re-read after every tool call, so it moves during long turns too. The model changes as soon as you switch (`/model`, fast mode, fallback).
-- **Effort is learned from the first model request.** The engine has no getter for it, so the mod reads it off each main-loop `turn.step` (the level actually sent, after any downgrade for the model). It appears once the first prompt of a session is sent and follows `/effort` and `/model` from the next request on.
-- **VCS refreshes after `Bash`, `Edit`, `Write` and `NotebookEdit`.** File edits make the tree dirty, so they count as well as shell commands. The mod also has the engine watch git's `HEAD` and `index`, so a checkout or commit made in another terminal shows up right away, and it refreshes when the session's working directory changes (e.g. entering a worktree).
-- **Degrades under managed settings.** Where an organization manages Claude Code, hooks on `classic.*` events and `session.compact` run only for plugins the organization lists. Without them the band still updates after each tool call and turn, but a model switch shows after the next tool call and outside git changes after the next turn.
-- **No update check, no network.** `claude plugin update` handles updates.
-
-## Development
+Set options in `/config`, or from a terminal:
 
 ```sh
-claude --plugin-dir .        # run it; interactive sessions hot-reload on save
-claude plugin test .         # tests/*.test.ts(x)
-claude plugin validate .
-tsc -p .                     # after the engine has laid .claude-plugin/types/ (first --plugin-dir load)
+claude plugin configure context-watch@context-watch
 ```
+
+| Option | Default | Description |
+|---|---|---|
+| `yellowAt` | `70000` | Tokens at which the meter turns yellow |
+| `redAbove` | `100000` | Tokens above which the meter turns red |
+| `showVcs` | `true` | Show the repository segment |
+
+Thresholds are token counts, not percentages.
+
+## Troubleshooting
+
+**The band isn't showing.** Run `/context-watch` to show it. If it still doesn't appear, check that the plugin is enabled with `claude plugin list`.
+
+**Effort isn't shown.** It appears after the first prompt of a session, and is omitted for models without effort levels.
+
+**Updates are delayed under organization-managed settings.** Some managed installs restrict which events plugins receive. The band still refreshes after each tool call and response, but model switches and commits made outside the session can take longer to appear.
+
+## Contributing
+
+Issues and pull requests are welcome.
+
+```sh
+git clone https://github.com/zbshadow/ContextWatch.git
+cd ContextWatch
+claude --plugin-dir .        # run with live reload
+claude plugin test .         # run tests
+claude plugin validate .     # validate the plugin
+```
+
+Design notes: [docs/DESIGN.md](docs/DESIGN.md).
 
 ## License
 
-MIT
+[MIT](LICENSE) © Brice Bayless
