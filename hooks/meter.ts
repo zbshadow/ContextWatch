@@ -10,6 +10,9 @@ export type Segment = {
   text: string
   color?: SegmentColor
   dim?: boolean
+  bold?: boolean
+  /** Swaps foreground and background: a colored badge. */
+  inverse?: boolean
   /** What the segment is, so the band can drop the hint first when short of room. */
   part: 'model' | 'effort' | 'label' | 'usage' | 'hint' | 'vcs' | 'added' | 'removed' | 'separator'
 }
@@ -27,6 +30,8 @@ const ZONE_COLOR: Record<Zone, SegmentColor> = {
 }
 
 const SEPARATOR: Segment = { text: ' · ', dim: true, part: 'separator' }
+/** The red-zone hint as a red badge, so it reads as a warning rather than a footnote. */
+export const HINT: Segment = { text: ' Consider /compact or /clear ', color: 'error', bold: true, inverse: true, part: 'hint' }
 
 export function formatTokens(count: number): string {
   if (count >= 1_000_000) return `${Math.round(count / 1_000_000)}M`
@@ -141,7 +146,7 @@ export function buildSegments(snapshot: Snapshot, options: BuildOptions = {}): S
     },
   )
   if (zone === 'red' && showHint) {
-    segments.push(SEPARATOR, { text: 'Consider /compact or /clear', dim: true, part: 'hint' })
+    segments.push(SEPARATOR, HINT)
   }
   if (showVcs) segments.push(SEPARATOR, formatVcs(snapshot.vcs), ...formatChanges(snapshot.vcs))
 

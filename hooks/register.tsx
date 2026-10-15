@@ -2,19 +2,23 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, SessionContextUsage } from 'claude-code'
 
 import type { Snapshot, VcsState } from '../types'
-import { displayModel, fitSegments, resolveThresholds } from './meter'
+import { classify, displayModel, fitSegments, formatTokens, resolveThresholds } from './meter'
 import type { Thresholds } from './meter'
 import { detectVcs } from './vcs'
 import type { Exists, Run } from './vcs'
 
 const STORE_HIDDEN = 'isHidden'
 const RUN_TIMEOUT_MS = 3000
+// The columns the band keeps for the Compact button beside the line.
+const COMPACT_BUTTON_COLUMNS = 14
 const VCS_TOOLS = ['Bash', 'Edit', 'Write', 'NotebookEdit'] as const
 // Files under the git dir that move on checkout, commit, stage and reset.
 const GIT_WATCH_FILES = ['HEAD', 'index'] as const
 
 const snapshotAtom = atom({ plugin: 'context-watch', key: 'snapshot' } as const, null)
 const isHiddenAtom = atom({ plugin: 'context-watch', key: 'isHidden' } as const, false)
+// Whether the toast for this stay in the red zone has been shown; kept in $.state so a reload doesn't repeat it.
+const isRedNotifiedAtom = atom({ plugin: 'context-watch', key: 'isRedNotified' } as const, false)
 
 type Settings = { thresholds: Thresholds; showVcs: boolean }
 type Pass = 'snapshot' | 'vcs'
@@ -59,6 +63,7 @@ async function refresh($: EngineInterface, settings: Settings): Promise<void> {
       vcs,
     }
     await update($, snapshotAtom, () => snapshot)
+    await noteZone($, settings)
   } catch {
     // keep the previous snapshot
   }
@@ -74,21 +79,48 @@ async function refreshVcs($: EngineInterface, settings: Settings): Promise<void>
   }
 }
 
-async function applyUsage($: EngineInterface, context: SessionContextUsage): Promise<void> {
+/** Toasts once on entering the red zone; leaving it re-arms the toast. */
+async function noteZone($: EngineInterface, settings: Settings): Promise<void> {
+  const snapshot = await read($, snapshotAtom)
+  if (!snapshot) return
+  const isRed = classify(snapshot.tokens, settings.thresholds) === 'red'
+  const isNotified = await read($, isRedNotifiedAtom)
+  if (isRed === isNotified) return
+  await update($, isRedNotifiedAtom, () => isRed)
+  if (isRed) {
+    $.ui.toast(`Context is at ${formatTokens(snapshot.tokens)} (${Math.round(snapshot.percent)}%): consider /compact or /clear`)
+  }
+}
+
+async function applyUsage($: EngineInterface, settings: Settings, context: SessionContextUsage): Promise<void> {
   // A window with no response yet has no fill: keep what is shown.
   if (context.tokens === undefined) return
   const tokens = context.tokens
   const percent = context.percent ?? 0
   await update($, snapshotAtom, snapshot => (snapshot ? { ...snapshot, tokens, percent } : snapshot))
+  await noteZone($, settings)
 }
 
 /** Usage alone, read from the engine: no processes, cheap enough to run after every tool. */
-async function refreshUsage($: EngineInterface): Promise<void> {
+async function refreshUsage($: EngineInterface, settings: Settings): Promise<void> {
   try {
-    await applyUsage($, (await $.session.usage()).context)
+    await applyUsage($, settings, (await $.session.usage()).context)
   } catch {
     // keep the previous usage
   }
+}
+
+/** The band's Compact button: `/compact`'s own call. It skips this mod's session.compact hook, so usage is re-read here. */
+async function compactNow($: EngineInterface, settings: Settings): Promise<void> {
+  try {
+    const { skip } = await $.session.compact()
+    if (skip) return
+  } catch (error) {
+    // The button is hidden mid-turn, so a refusal here is the engine's own (a turn just started, nothing to compact).
+    $.ui.toast(`Couldn't compact${error instanceof Error ? `: ${error.message}` : ''}`)
+    return
+  }
+  await refreshUsage($, settings)
 }
 
 async function applyModel($: EngineInterface, model: string): Promise<void> {
@@ -157,7 +189,7 @@ export const register: Register = (on, options) => {
   // Usage as the engine measures it, pushed after each main-thread turn.
   on('session.measure', async ($, e, next) => {
     const result = await next(e)
-    if (e.changed.includes('context')) await applyUsage($, e.context)
+    if (e.changed.includes('context')) await applyUsage($, settings, e.context)
     return result
   })
 
@@ -165,7 +197,7 @@ export const register: Register = (on, options) => {
   // Usage is one engine read, so it is awaited; git is not, so the tool result isn't held back.
   on('tool.call', async ($, e, next) => {
     const result = await next(e)
-    await refreshUsage($)
+    await refreshUsage($, settings)
     if ((VCS_TOOLS as readonly string[]).includes(e.tool)) void requestRefresh($, settings, 'vcs')
     return result
   }).catch(($, e, next) => next(e))
@@ -185,7 +217,7 @@ export const register: Register = (on, options) => {
 
   on('session.compact', async ($, e, next) => {
     const result = await next(e)
-    await refreshUsage($)
+    await refreshUsage($, settings)
     return result
   }).catch(($, e, next) => next(e))
 
@@ -193,6 +225,7 @@ export const register: Register = (on, options) => {
     const result = await next(e)
     if (e.reason === 'clear') {
       await update($, snapshotAtom, snapshot => (snapshot ? { ...snapshot, tokens: 0, percent: 0 } : snapshot))
+      await noteZone($, settings)
     }
     return result
   })
@@ -201,7 +234,7 @@ export const register: Register = (on, options) => {
   on('classic.PostModelSwitch', async ($, e, next) => {
     const result = await next(e)
     await applyModel($, e.to_model)
-    await refreshUsage($)
+    await refreshUsage($, settings)
     return result
   }).catch(($, e, next) => next(e))
 
@@ -240,18 +273,24 @@ export const register: Register = (on, options) => {
     const isHidden = await read($, isHiddenAtom)
     if (snapshot === null || isHidden) return next(e)
 
-    const { Box, Text } = $.ui.resolve(e)
-    const segments = fitSegments(snapshot, e.props.bodyColumns, settings)
+    const { Box, Button, Text } = $.ui.resolve(e)
+    // Compacting is refused mid-turn, so the button shows only between turns.
+    const hasCompact = classify(snapshot.tokens, settings.thresholds) === 'red' && !e.props.isWorking
+    const columns = e.props.bodyColumns - (hasCompact ? COMPACT_BUTTON_COLUMNS : 0)
+    const segments = fitSegments(snapshot, columns, settings)
 
     return (
-      <Box>
+      <Box flexDirection="row" gap={1}>
         <Text wrap="truncate-end">
           {segments.map(segment => (
-            <Text color={segment.color} dimColor={segment.dim}>
+            <Text color={segment.color} dimColor={segment.dim} bold={segment.bold} inverse={segment.inverse}>
               {segment.text}
             </Text>
           ))}
         </Text>
+        {hasCompact && (
+          <Button key="compact" label="Compact" hotkey="c" variant="primary" onPress={() => compactNow($, settings)} />
+        )}
       </Box>
     )
   })

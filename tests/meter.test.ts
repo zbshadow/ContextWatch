@@ -193,8 +193,14 @@ describe('buildSegments', () => {
   test('red zone numbers are error', () => {
     expect(part(buildSegments(snap(112_000, 56)), 'usage')).toEqual({ text: '112k (56%)', color: 'error', part: 'usage' })
   })
-  test('red zone suggestion is dim', () => {
-    expect(part(buildSegments(snap(112_000, 56)), 'hint')).toEqual({ text: 'Consider /compact or /clear', dim: true, part: 'hint' })
+  test('red zone suggestion is a bold red badge', () => {
+    expect(part(buildSegments(snap(112_000, 56)), 'hint')).toEqual({
+      text: ' Consider /compact or /clear ',
+      color: 'error',
+      bold: true,
+      inverse: true,
+      part: 'hint',
+    })
   })
   test('no suggestion in green', () => expect(line(buildSegments(snap(24300, 18)))).not.toContain('Consider'))
   test('no suggestion in yellow', () => expect(line(buildSegments(snap(85_000, 43)))).not.toContain('Consider'))

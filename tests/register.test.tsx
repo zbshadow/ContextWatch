@@ -20,6 +20,10 @@ type World = {
   runs: string[]
   runInits: unknown[]
   logs: string[]
+  toasts: string[]
+  compacts: number
+  compactSkip: string | null
+  isCompactBroken: boolean
   store: Record<string, unknown>
 }
 
@@ -39,6 +43,10 @@ function world(on: On, store: Record<string, unknown> = {}, init: Partial<World>
     runs: [],
     runInits: [],
     logs: [],
+    toasts: [],
+    compacts: 0,
+    compactSkip: null,
+    isCompactBroken: false,
     store: { ...store },
     ...init,
   }
@@ -87,6 +95,21 @@ function world(on: On, store: Record<string, unknown> = {}, init: Partial<World>
   on('ui.render', { component: 'AbovePrompt' }, ($, e) => {
     const { Text } = $.ui.resolve(e)
     return <Text>{ENGINE}</Text>
+  })
+  on('ui.toast', (_$, e) => {
+    w.toasts.push(e.text)
+    return { value: undefined }
+  })
+  const conversation = [{ role: 'user' as const, text: 'hello', toolUses: [] }]
+  on('session.messages', () => ({ value: conversation }))
+  // /compact: the engine compacts down to a few thousand tokens.
+  on('session.compact', () => {
+    if (w.isCompactBroken) throw new Error('a turn is running')
+    if (w.compactSkip !== null) return { skip: w.compactSkip }
+    w.compacts += 1
+    w.tokens = 5_000
+    w.percent = 2.5
+    return { messages: [{ role: 'assistant' as const, text: 'summary', toolUses: [] }] }
   })
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   on('turn.complete', (_$, e) => ({ text: e.answer }))
@@ -144,9 +167,9 @@ const runCommand = ($: Engine) =>
     presentation: { isFullscreen: false, columns: 120 },
   })
 
-const bandProps = (bodyColumns = 120, hasSurvey = false) => ({
+const bandProps = (bodyColumns = 120, hasSurvey = false, isWorking = false) => ({
   hasSurvey,
-  isWorking: false,
+  isWorking,
   maxRows: 10,
   bodyColumns,
   scroll: { offset: 0, bodyRows: 10 },
@@ -182,7 +205,8 @@ describe('band', () => {
     for (const surface of SURFACES) {
       const texts = await bandText($, surface)
       expect(texts.find(t => t.text === '112k (56%)')?.props.color).toBe('error')
-      expect(texts.find(t => t.text === 'Consider /compact or /clear')?.props.dimColor).toBe(true)
+      const hint = texts.find(t => t.text === ' Consider /compact or /clear ')
+      expect(hint?.props).toMatchObject({ color: 'error', bold: true, inverse: true })
       expect(texts.find(t => t.text === '[GitHub/my-project/main*]')?.props.color).toBe('cyan')
     }
     await measure($, 85_000, 42)
@@ -232,6 +256,93 @@ describe('band', () => {
     world(on, {}, { model: 'Opus 4.6' })
     await start($)
     expect(await bandLine($, 'terminal')).toStartWith('Opus 4.6 · Context:')
+  })
+})
+
+const mountBand = ($: Engine, surface: (typeof SURFACES)[number], isWorking = false) =>
+  $.ui.mount({ plugin: PLUGIN, surface, component: 'AbovePrompt', props: bandProps(120, false, isWorking) })
+
+describe('red zone', () => {
+  test('a Compact button shows in the red zone and compacts on press', async ($, on) => {
+    const w = world(on, {}, { tokens: 112_000, percent: 56 })
+    await start($)
+    const ui = await mountBand($, 'terminal')
+    expect(await ui.find({ key: 'compact' })).toBeDefined()
+    await ui.press({ key: 'compact' })
+    await ui.unmount()
+    expect(w.compacts).toBe(1)
+    // usage is re-read at once, so the band leaves the red zone
+    expect(await bandLine($, 'terminal')).toContain('Context: 5k (3%)')
+    const after = await mountBand($, 'terminal')
+    expect(await after.find({ key: 'compact' })).toBeUndefined()
+    await after.unmount()
+  })
+
+  test('the Compact button shows on the desktop too', async ($, on) => {
+    world(on, {}, { tokens: 112_000, percent: 56 })
+    await start($)
+    const ui = await mountBand($, 'desktop')
+    expect(await ui.find({ key: 'compact' })).toBeDefined()
+    await ui.unmount()
+  })
+
+  test('no Compact button outside the red zone or mid-turn', async ($, on) => {
+    const w = world(on, {}, { tokens: 112_000, percent: 56 })
+    await start($)
+    for (const surface of SURFACES) {
+      const working = await mountBand($, surface, true)
+      expect(await working.find({ key: 'compact' })).toBeUndefined()
+      await working.unmount()
+    }
+    w.tokens = 85_000
+    await callTool($, 'Read')
+    for (const surface of SURFACES) {
+      const ui = await mountBand($, surface)
+      expect(await ui.find({ key: 'compact' })).toBeUndefined()
+      await ui.unmount()
+    }
+  })
+
+  test('a refused compaction says why', async ($, on) => {
+    const w = world(on, {}, { tokens: 112_000, percent: 56, isCompactBroken: true })
+    await start($)
+    w.toasts = []
+    const ui = await mountBand($, 'terminal')
+    await ui.press({ key: 'compact' })
+    await ui.unmount()
+    expect(w.toasts).toHaveLength(1)
+    expect(w.toasts[0]).toStartWith("Couldn't compact: ")
+    expect(await bandLine($, 'terminal')).toContain('112k')
+  })
+
+  test('a vetoed compaction leaves usage alone', async ($, on) => {
+    const w = world(on, {}, { tokens: 112_000, percent: 56, compactSkip: 'blocked by a hook' })
+    await start($)
+    const ui = await mountBand($, 'terminal')
+    await ui.press({ key: 'compact' })
+    await ui.unmount()
+    expect(w.compacts).toBe(0)
+    expect(await bandLine($, 'terminal')).toContain('112k')
+  })
+
+  test('entering the red zone toasts once, and leaving it re-arms the toast', async ($, on) => {
+    const w = world(on, {}, { tokens: 85_000, percent: 42 })
+    await start($)
+    expect(w.toasts).toEqual([])
+    await measure($, 112_000, 56)
+    await measure($, 120_000, 60)
+    expect(w.toasts).toEqual(['Context is at 112k (56%): consider /compact or /clear'])
+    await measure($, 40_000, 20)
+    await measure($, 101_000, 50)
+    expect(w.toasts).toHaveLength(2)
+  })
+
+  test('a reload in the red zone does not toast again', async ($, on) => {
+    const w = world(on, {}, { tokens: 112_000, percent: 56 })
+    await start($)
+    expect(w.toasts).toHaveLength(1)
+    await start($)
+    expect(w.toasts).toHaveLength(1)
   })
 })
 

@@ -20,6 +20,6 @@ export type Snapshot = {
 
 declare module 'claude-code' {
   interface PluginState {
-    'context-watch': { snapshot: Snapshot | null; isHidden: boolean }
+    'context-watch': { snapshot: Snapshot | null; isHidden: boolean; isRedNotified: boolean }
   }
 }

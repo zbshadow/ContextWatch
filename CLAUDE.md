@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-ContextWatch is a Claude Code **mod** (plugin of function hooks): an `AbovePrompt` band showing model · context usage (zone-colored) · VCS state. It ports `claude-context-meter` v1.0.6 (`~/Projects/Claude Observation Plugin/context_meter.js`) from a `statusLine` script. `SPEC.md` is the original hand-off spec; `README.md` records the decisions taken on its open questions.
+ContextWatch is a Claude Code **mod** (plugin of function hooks): an `AbovePrompt` band showing model · context usage (zone-colored) · VCS state. It ports `claude-context-meter` v1.0.6 (`~/Projects/Claude Observation Plugin/context_meter.js`) from a `statusLine` script. `SPEC.md` is the original hand-off spec; `docs/DESIGN.md` records the decisions taken on its open questions; `README.md` is the public, user-facing page.
 
 ## Before changing hook code
 
@@ -26,7 +26,7 @@ The repo root is both the mod and its own marketplace (`.claude-plugin/plugin.js
 
 Flow: `events → (refresh | refreshVcs | refreshUsage | apply*) → snapshot atom in $.state → ui.render AbovePrompt → band`.
 
-- `hooks/register.tsx`: wiring only. All I/O lives in top-level functions: `refresh` (whole snapshot, at `session.start`), `refreshVcs` (git), `refreshUsage` (one `$.session.usage()` read), `applyUsage`/`applyModel`/`applyEffort` (values handed in by an event). `requestRefresh($, settings, 'snapshot' | 'vcs')` coalesces each pass kind separately. The render hook only reads atoms. Triggers:
+- `hooks/register.tsx`: wiring only. All I/O lives in top-level functions: `refresh` (whole snapshot, at `session.start`), `refreshVcs` (git), `refreshUsage` (one `$.session.usage()` read), `applyUsage`/`applyModel`/`applyEffort` (values handed in by an event). `requestRefresh($, settings, 'snapshot' | 'vcs')` coalesces each pass kind separately. The render hook only reads atoms; its Compact button calls `compactNow`, which re-reads usage itself because `$.session.compact()` skips the caller's own `session.compact` hook. `noteZone` toasts once on entering red (`isRedNotified` in `$.state`, so reloads don't repeat it). Triggers:
   - usage: `session.measure` (pushed, no I/O), every `tool.call` (awaited; it's one engine read), `session.compact`, and `session.end` with `reason: 'clear'`, which zeroes it
   - model: `classic.PostModelSwitch` (`e.to_model`)
   - effort: `turn.step` on the main loop (`e.agentId === undefined`), read from `e.effort` before forwarding with `yield* next(e)`; there is no `$.session` getter, so `refresh` carries the last known effort over
@@ -47,5 +47,7 @@ Flow: `events → (refresh | refreshVcs | refreshUsage | apply*) → snapshot at
 
 - Hooks the test registers with `on` are the bottom. For a call on `$` they must answer `{ value: ... }`; for an event (`session.start`, `turn.complete`, ...) they return the plain result.
 - An event can't be registered twice on the test's `on`. Vary behavior through flags on the `world()` helper in `tests/register.test.tsx` instead.
+- `$.session.compact()` from the mod needs a bottom `session.messages` answering at least one message, and the bottom `session.compact` must return at least one: a compaction never leaves an empty conversation.
+- `ui.press` runs the Button's `onPress`; the tests read its effects right after.
 - `$.ui.mount` needs a bottom `ui.render` hook. Tests draw an `ENGINE` marker there to detect "the mod drew nothing".
 - Loop UI assertions over `['terminal', 'desktop']`.
