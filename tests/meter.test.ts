@@ -75,6 +75,17 @@ describe('displayModel', () => {
   test('dated ID drops the date', () => expect(displayModel('claude-opus-4-1-20250805')).toBe('Opus 4.1'))
   test('single-number version', () => expect(displayModel('claude-opus-5')).toBe('Opus 5'))
   test('1M context suffix', () => expect(displayModel('claude-opus-4-6[1m]')).toBe('Opus 4.6 (1M context)'))
+  test('Bedrock inference profile ID', () => expect(displayModel('us.anthropic.claude-sonnet-4-5-20250929-v1:0')).toBe('Sonnet 4.5'))
+  test('Bedrock base model ID', () => expect(displayModel('anthropic.claude-opus-4-1-20250805-v1:0')).toBe('Opus 4.1'))
+  test('Bedrock global profile with 1M suffix', () =>
+    expect(displayModel('global.anthropic.claude-sonnet-4-5-20250929-v1:0[1m]')).toBe('Sonnet 4.5 (1M context)'))
+  test('Vertex ID', () => expect(displayModel('claude-sonnet-4-5@20250929')).toBe('Sonnet 4.5'))
+  test('older version-first ID', () => expect(displayModel('claude-3-5-sonnet-20241022')).toBe('Sonnet 3.5'))
+  test('older single-number version', () => expect(displayModel('claude-3-opus-20240229')).toBe('Opus 3'))
+  test('older Bedrock ID', () => expect(displayModel('us.anthropic.claude-3-7-sonnet-20250219-v1:0')).toBe('Sonnet 3.7'))
+  test('older Bedrock v2 ID', () => expect(displayModel('anthropic.claude-3-5-sonnet-20241022-v2:0')).toBe('Sonnet 3.5'))
+  test('older Vertex v2 ID', () => expect(displayModel('claude-3-5-sonnet-v2@20241022')).toBe('Sonnet 3.5'))
+  test('older Vertex ID', () => expect(displayModel('claude-3-5-haiku@20241022')).toBe('Haiku 3.5'))
   test('display name passes through', () => expect(displayModel('Sonnet 4.6')).toBe('Sonnet 4.6'))
   test('unknown ID passes through', () => expect(displayModel('gpt-like-model')).toBe('gpt-like-model'))
   test('empty is null', () => {

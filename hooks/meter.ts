@@ -79,16 +79,25 @@ const FAMILY_NAMES: Record<string, string> = {
 /**
  * Turns a model ID (`claude-sonnet-4-6`, `claude-opus-4-1-20250805`,
  * `claude-opus-4-6[1m]`) into the status line's display style (`Sonnet 4.6`).
+ * Bedrock (`us.anthropic.claude-sonnet-4-5-20250929-v1:0`) and Vertex
+ * (`claude-sonnet-4-5@20250929`) IDs are recognized too, as is the older
+ * version-first order (`claude-3-5-sonnet-20241022`, `claude-3-5-sonnet-v2@20241022`).
  * Anything else, a display name included, comes back as given; empty is null.
  */
 export function displayModel(model: string | null | undefined): string | null {
   const raw = model?.trim()
   if (!raw) return null
-  const match = raw.match(/^claude-([a-z]+)-(\d+)(?:-(\d{1,2}))?(?:-\d{8})?(\[1m\])?$/i)
-  const family = match?.[1] ? FAMILY_NAMES[match[1].toLowerCase()] : undefined
-  if (!match || !family) return raw
-  const version = match[3] ? `${match[2]}.${match[3]}` : match[2]
-  return `${family} ${version}${match[4] ? ' (1M context)' : ''}`
+  const match = raw.match(
+    /^(?:(?:[a-z-]+\.)?anthropic\.)?claude-(?:(?<family>[a-z]+)-(?<major>\d+)(?:-(?<minor>\d{1,2}))?|(?<oldMajor>\d+)(?:-(?<oldMinor>\d{1,2}))?-(?<oldFamily>[a-z]+))(?:-v\d+)?(?:[-@]\d{8})?(?:-v\d+(?::\d+)?)?(?<long>\[1m\])?$/i,
+  )
+  const g = match?.groups
+  const familyKey = g?.family ?? g?.oldFamily
+  const family = familyKey ? FAMILY_NAMES[familyKey.toLowerCase()] : undefined
+  if (!g || !family) return raw
+  const major = g.major ?? g.oldMajor
+  const minor = g.minor ?? g.oldMinor
+  const version = minor ? `${major}.${minor}` : major
+  return `${family} ${version}${g.long ? ' (1M context)' : ''}`
 }
 
 /** A level (`high`) as given; a thinking budget in tokens as `32k`. */
