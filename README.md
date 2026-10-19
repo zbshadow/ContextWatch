@@ -1,6 +1,6 @@
 # ContextWatch
 
-[![Version](https://img.shields.io/badge/version-0.1.0-blue)](.claude-plugin/plugin.json)
+[![Version](https://img.shields.io/badge/version-0.1.1-blue)](.claude-plugin/plugin.json)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-%E2%89%A52.1.287-d97757)](https://claude.com/claude-code)
 
