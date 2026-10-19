@@ -1,0 +1,28 @@
+{
+  "name": "context-watch",
+  "version": "0.1.0",
+  "description": "A band above the prompt showing the model, context-window usage and version-control state",
+  "author": { "name": "zbshadow" },
+  "license": "MIT",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "yellowAt": {
+      "type": "number",
+      "title": "Yellow at (tokens)",
+      "description": "Context tokens at which the meter turns yellow",
+      "default": 70000
+    },
+    "redAbove": {
+      "type": "number",
+      "title": "Red above (tokens)",
+      "description": "Context tokens above which the meter turns red and suggests /compact",
+      "default": 100000
+    },
+    "showVcs": {
+      "type": "boolean",
+      "title": "Show version control",
+      "description": "Include the platform/repo/branch segment",
+      "default": true
+    }
+  }
+}

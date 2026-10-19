@@ -1,0 +1,13 @@
+{
+  "name": "context-watch",
+  "description": "ContextWatch: a context-window meter for Claude Code",
+  "owner": {
+    "name": "zbshadow"
+  },
+  "plugins": [
+    {
+      "name": "context-watch",
+      "source": "./"
+    }
+  ]
+}
