@@ -1,6 +1,6 @@
 {
   "name": "context-watch",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A band above the prompt showing the model, context-window usage and version-control state",
   "author": { "name": "zbshadow" },
   "license": "MIT",
